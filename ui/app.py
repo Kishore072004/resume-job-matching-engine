@@ -1,0 +1,148 @@
+"""
+Streamlit Web UI Dashboard for AI Resume-to-Job Matching Engine.
+"""
+
+import os
+import requests
+import streamlit as st
+
+# Configuration
+DEFAULT_API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+
+st.set_page_config(
+    page_title="Resume Matcher",
+    page_icon="📄",
+    layout="wide",
+)
+
+def parse_uploaded_file(uploaded_file) -> str:
+    """Extract plain text from uploaded file (.txt, .pdf, .docx)."""
+    if uploaded_file is None:
+        return ""
+    
+    filename = uploaded_file.name.lower()
+    try:
+        if filename.endswith(".txt"):
+            return uploaded_file.read().decode("utf-8", errors="ignore")
+        elif filename.endswith(".pdf"):
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(uploaded_file)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text() or ""
+                return text
+            except Exception as e:
+                st.error(f"Error reading PDF file: {e}")
+                return ""
+        elif filename.endswith(".docx"):
+            try:
+                import docx
+                doc = docx.Document(uploaded_file)
+                return "\n".join([p.text for p in doc.paragraphs])
+            except Exception as e:
+                st.error(f"Error reading DOCX file: {e}")
+                return ""
+        else:
+            return uploaded_file.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        st.error(f"Failed to read uploaded file: {e}")
+        return ""
+
+st.title("📄 Resume to Job Matcher")
+st.write("Analyze how well a candidate's resume fits a job description using our AI engine.")
+
+with st.sidebar:
+    st.header("Settings")
+    api_url = st.text_input("API URL", value=DEFAULT_API_URL)
+    category = st.selectbox(
+        "Category",
+        options=["Information-Technology", "Engineering", "Healthcare", "Finance", "Sales", "Human-Resources", "General"],
+        index=0
+    )
+    experience_level = st.selectbox(
+        "Experience Level",
+        options=["Not Specified", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"],
+        index=3
+    )
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Candidate Resume")
+    uploaded_file = st.file_uploader("Upload File (.txt, .pdf, .docx)", type=["txt", "pdf", "docx"])
+    
+    default_text = ""
+    if uploaded_file is not None:
+        default_text = parse_uploaded_file(uploaded_file)
+        if default_text:
+            st.success("File uploaded successfully!")
+
+    resume_text = st.text_area("Resume Text", value=default_text, height=300)
+
+with col2:
+    st.subheader("Job Description")
+    job_title = st.text_input("Job Title", placeholder="Software Engineer")
+    job_desc = st.text_area("Job Requirements", height=300)
+
+if st.button("Analyze Match", type="primary"):
+    if not resume_text.strip() or not job_title.strip() or not job_desc.strip():
+        st.warning("Please fill in all the required fields.")
+    else:
+        with st.spinner("Analyzing match... This may take a moment."):
+            payload = {
+                "resume_text": resume_text,
+                "job_title": job_title,
+                "job_description": job_desc,
+                "category": category,
+                "experience_level": experience_level,
+            }
+            
+            try:
+                endpoint = f"{api_url.rstrip('/')}/api/v1/match"
+                response = requests.post(endpoint, json=payload, timeout=120)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    st.success("Analysis complete!")
+                    st.divider()
+                    
+                    score = data.get("estimated_match_score", 0)
+                    is_match = data.get("is_match", False)
+                    prob = data.get("estimated_probability", 0.0)
+
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Match Score", f"{score}/100", "Match" if is_match else "No Match")
+                    c2.metric("Confidence", f"{prob*100:.1f}%")
+                    c3.metric("Experience Match", "Yes" if data.get("compatibility", {}).get("experience_match") == 1.0 else "No")
+                    
+                    st.progress(min(1.0, max(0.0, score / 100.0)))
+                    
+                    tab1, tab2, tab3 = st.tabs(["Skills Breakdown", "SHAP Features", "Raw Response"])
+                    
+                    with tab1:
+                        sk = data.get("skills_analysis", {})
+                        col_sk1, col_sk2 = st.columns(2)
+                        with col_sk1:
+                            st.write("### Matched Skills")
+                            for skill in sk.get("matched_skills", []):
+                                st.write(f"- ✅ {skill}")
+                        with col_sk2:
+                            st.write("### Missing Skills")
+                            for skill in sk.get("missing_skills", []):
+                                st.write(f"- ❌ {skill}")
+                                
+                    with tab2:
+                        shap_feats = data.get("top_contributing_features", [])
+                        if shap_feats:
+                            st.dataframe(shap_feats)
+                        else:
+                            st.info("No SHAP features available.")
+                            
+                    with tab3:
+                        st.json(data)
+                        
+                else:
+                    st.error(f"API Error ({response.status_code}): {response.text}")
+            except Exception as e:
+                st.error(f"Failed to communicate with FastAPI backend: {e}")

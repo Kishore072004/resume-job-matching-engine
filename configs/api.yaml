@@ -1,0 +1,14 @@
+# FastAPI Application Configuration
+host: "127.0.0.1"
+port: 8000
+log_level: "INFO"
+
+# CORS configuration
+allowed_origins:
+  - "http://localhost:3000"
+  - "http://localhost:8501"
+  - "http://127.0.0.1:8000"
+
+# Request Limits
+max_input_characters: 50000
+max_batch_size: 50
