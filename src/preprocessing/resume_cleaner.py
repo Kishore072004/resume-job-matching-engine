@@ -191,8 +191,9 @@ def extract_resume_skills(
         r_id = row["resume_id"]
         c_text = row["clean_text"]
 
-        text_clean = re.sub(r"[\r\n\t]+", " ", c_text)
-        words = [w.strip(',;:()[]{}!"\'') for w in text_clean.split() if w.strip(',;:()[]{}!"\'')]
+        text_padded = re.sub(r"[/|\\•·\*\:\(\)\[\]\{\}]", " ", c_text)
+        text_clean = re.sub(r"[\r\n\t\s]+", " ", text_padded)
+        words = [w.strip(',;:!"\'') for w in text_clean.split() if w.strip(',;:!"\'')]
         words_norm = [w.lower() for w in words]
 
         detected = {}

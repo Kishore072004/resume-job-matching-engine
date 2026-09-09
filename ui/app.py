@@ -123,14 +123,65 @@ if st.button("Analyze Match", type="primary"):
                     with tab1:
                         sk = data.get("skills_analysis", {})
                         col_sk1, col_sk2 = st.columns(2)
+                        
+                        m_group = sk.get("matched_grouped", {})
+                        mis_group = sk.get("missing_grouped", {})
+                        m_flat = sk.get("matched_skills", [])
+                        mis_flat = sk.get("missing_skills", [])
+                        
                         with col_sk1:
-                            st.write("### Matched Skills")
-                            for skill in sk.get("matched_skills", []):
-                                st.write(f"- ✅ {skill}")
+                            st.subheader("Matched Skills")
+                            has_matched = False
+                            if m_group.get("technical"):
+                                st.markdown("**Technical Skills:**")
+                                for s in m_group["technical"]: st.markdown(f"- ✅ **{s}**")
+                                has_matched = True
+                            if m_group.get("professional"):
+                                st.markdown("**Professional / Soft Skills:**")
+                                for s in m_group["professional"]: st.markdown(f"- 🤝 **{s}**")
+                                has_matched = True
+                            if m_group.get("domain"):
+                                st.markdown("**Domain / Industry Skills:**")
+                                for s in m_group["domain"]: st.markdown(f"- 🏢 **{s}**")
+                                has_matched = True
+                            if m_group.get("generic"):
+                                st.markdown("**General / Other Skills:**")
+                                for s in m_group["generic"]: st.markdown(f"- 💡 **{s}**")
+                                has_matched = True
+                                
+                            if not has_matched:
+                                if m_flat:
+                                    st.markdown("**All Matched Skills:**")
+                                    for s in m_flat: st.markdown(f"- ✅ **{s}**")
+                                else:
+                                    st.info("No matching ESCO skills detected in text.")
+                                    
                         with col_sk2:
-                            st.write("### Missing Skills")
-                            for skill in sk.get("missing_skills", []):
-                                st.write(f"- ❌ {skill}")
+                            st.subheader("Missing Skills (Skill Gap)")
+                            has_missing = False
+                            if mis_group.get("technical"):
+                                st.markdown("**Technical Skills:**")
+                                for s in mis_group["technical"]: st.markdown(f"- ❌ **{s}**")
+                                has_missing = True
+                            if mis_group.get("professional"):
+                                st.markdown("**Professional / Soft Skills:**")
+                                for s in mis_group["professional"]: st.markdown(f"- ❌ **{s}**")
+                                has_missing = True
+                            if mis_group.get("domain"):
+                                st.markdown("**Domain / Industry Skills:**")
+                                for s in mis_group["domain"]: st.markdown(f"- ❌ **{s}**")
+                                has_missing = True
+                            if mis_group.get("generic"):
+                                st.markdown("**General / Other Skills:**")
+                                for s in mis_group["generic"]: st.markdown(f"- ❌ **{s}**")
+                                has_missing = True
+                                
+                            if not has_missing:
+                                if mis_flat:
+                                    st.markdown("**All Missing Skills:**")
+                                    for s in mis_flat: st.markdown(f"- ❌ **{s}**")
+                                else:
+                                    st.success("No skill gap detected! Candidate satisfies all required job skills.")
                                 
                     with tab2:
                         shap_feats = data.get("top_contributing_features", [])

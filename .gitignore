@@ -35,10 +35,16 @@ wheels/
 # Project specifics
 data/raw/*
 data/processed/*
+!data/processed/esco_relevant_skills.parquet
+!data/processed/esco_relevant_skill_aliases.parquet
+!data/processed/canonical_application_skills.parquet
+!data/processed/esco_occupations.parquet
+!data/processed/esco_skills.parquet
+!data/processed/esco_skill_aliases.parquet
 !data/raw/.gitkeep
 !data/processed/.gitkeep
-models/*
-!models/.gitkeep
+models/*.db
+*.db
 
 # IDEs
 .idea/

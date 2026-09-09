@@ -235,8 +235,9 @@ def extract_job_esco_skills(
         if not combined_text:
             continue
 
-        text_clean = re.sub(r"[\r\n\t]+", " ", combined_text)
-        words = [w.strip(',;:()[]{}!"\'') for w in text_clean.split() if w.strip(',;:()[]{}!"\'')]
+        text_padded = re.sub(r"[/|\\•·\*\:\(\)\[\]\{\}]", " ", combined_text)
+        text_clean = re.sub(r"[\r\n\t\s]+", " ", text_padded)
+        words = [w.strip(',;:!"\'') for w in text_clean.split() if w.strip(',;:!"\'')]
         words_norm = [w.lower() for w in words]
 
         detected = {}

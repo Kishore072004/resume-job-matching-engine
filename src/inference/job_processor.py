@@ -33,8 +33,8 @@ class JobProcessor:
 
     def _load_reference_data(self):
         """Load ESCO reference data for skill extraction."""
-        skills_path = self.processed_dir / "esco_skills.parquet"
-        aliases_path = self.processed_dir / "esco_skill_aliases.parquet"
+        skills_path = self.processed_dir / "esco_relevant_skills.parquet"
+        aliases_path = self.processed_dir / "esco_relevant_skill_aliases.parquet"
 
         if not skills_path.exists() or not aliases_path.exists():
             raise FileNotFoundError(

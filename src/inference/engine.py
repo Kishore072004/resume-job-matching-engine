@@ -46,6 +46,7 @@ class JobMatchEngine:
 
         self._load_production_artifact()
         self._init_processors()
+        self._load_skill_categories()
         self._load_embedding_model()
         self._init_shap_explainer()
 
@@ -69,6 +70,26 @@ class JobMatchEngine:
         """Initialize resume and job processors."""
         self.resume_processor = ResumeProcessor(self.processed_dir)
         self.job_processor = JobProcessor(self.processed_dir)
+
+    def _load_skill_categories(self):
+        """Load skill relevance categories for output grouping with case-insensitive lookup."""
+        canonical_path = self.processed_dir / "canonical_application_skills.parquet"
+        if canonical_path.exists():
+            df_canonical = pd.read_parquet(canonical_path)
+            cat_map = {}
+            for _, row in df_canonical.iterrows():
+                cat = str(row.get("relevance_category", "generic"))
+                pref = str(row.get("preferredLabel", "")).strip()
+                norm = str(row.get("normalized_label", "")).strip()
+                if pref:
+                    cat_map[pref] = cat
+                    cat_map[pref.lower()] = cat
+                if norm:
+                    cat_map[norm] = cat
+                    cat_map[norm.lower()] = cat
+            self.skill_category_map = cat_map
+        else:
+            self.skill_category_map = {}
 
     def _load_embedding_model(self):
         """Load sentence-transformers model for semantic similarity computation."""
@@ -218,6 +239,22 @@ class JobMatchEngine:
         # 9. Skill Breakdown
         matched_skills = sorted(list(shared_skills))
         missing_skills = sorted(list(j_skills - r_skills))
+        
+        def group_skills(skill_list):
+            grouped = {"technical": [], "professional": [], "domain": [], "generic": []}
+            for s in skill_list:
+                s_str = str(s).strip()
+                cat = self.skill_category_map.get(s_str, self.skill_category_map.get(s_str.lower(), "generic"))
+                if cat in ("soft_skill", "professional"):
+                    grouped["professional"].append(s_str)
+                elif cat in grouped:
+                    grouped[cat].append(s_str)
+                else:
+                    grouped["generic"].append(s_str)
+            return grouped
+
+        matched_grouped = group_skills(matched_skills)
+        missing_grouped = group_skills(missing_skills)
 
         # 10. Format Output Response
         return {
@@ -229,6 +266,8 @@ class JobMatchEngine:
             "skills_analysis": {
                 "matched_skills": matched_skills,
                 "missing_skills": missing_skills,
+                "matched_grouped": matched_grouped,
+                "missing_grouped": missing_grouped,
                 "shared_skill_count": shared_cnt,
                 "resume_skill_count": r_skill_cnt,
                 "job_skill_count": j_skill_cnt,
