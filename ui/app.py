@@ -85,6 +85,17 @@ with col2:
     job_title = st.text_input("Job Title", placeholder="Software Engineer")
     job_desc = st.text_area("Job Requirements", height=300)
 
+@st.cache_resource
+def get_standalone_engine():
+    """Cache and load standalone JobMatchEngine for direct inference fallback."""
+    import sys
+    from pathlib import Path
+    root_dir = Path(__file__).resolve().parent.parent
+    if str(root_dir) not in sys.path:
+        sys.path.insert(0, str(root_dir))
+    from src.inference.engine import JobMatchEngine
+    return JobMatchEngine()
+
 if st.button("Analyze Match", type="primary"):
     if not resume_text.strip() or not job_title.strip() or not job_desc.strip():
         st.warning("Please fill in all the required fields.")
@@ -98,102 +109,120 @@ if st.button("Analyze Match", type="primary"):
                 "experience_level": experience_level,
             }
             
+            data = None
+            used_fallback = False
+
+            # Try API endpoint first
             try:
                 endpoint = f"{api_url.rstrip('/')}/api/v1/match"
-                response = requests.post(endpoint, json=payload, timeout=120)
-                
+                response = requests.post(endpoint, json=payload, timeout=5)
                 if response.status_code == 200:
                     data = response.json()
-                    st.success("Analysis complete!")
-                    st.divider()
-                    
-                    score = data.get("estimated_match_score", 0)
-                    is_match = data.get("is_match", False)
-                    prob = data.get("estimated_probability", 0.0)
+            except Exception:
+                # If API is unreachable (e.g. hosted on Streamlit Cloud without separate backend), fall back to in-process ML engine
+                used_fallback = True
 
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Match Score", f"{score}/100", "Match" if is_match else "No Match")
-                    c2.metric("Confidence", f"{prob*100:.1f}%")
-                    c3.metric("Experience Match", "Yes" if data.get("compatibility", {}).get("experience_match") == 1.0 else "No")
+            if data is None:
+                try:
+                    engine = get_standalone_engine()
+                    data = engine.predict_match(
+                        resume_text=resume_text,
+                        job_title=job_title,
+                        job_description=job_desc,
+                        category=category,
+                        experience_level=experience_level,
+                    )
+                except Exception as ex:
+                    st.error(f"Inference error: {ex}")
+
+            if data:
+                if used_fallback:
+                    st.caption("ℹ️ *Running in direct ML model mode (standalone inference engine).*")
+                st.success("Analysis complete!")
+                st.divider()
+                
+                score = data.get("estimated_match_score", 0)
+                is_match = data.get("is_match", False)
+                prob = data.get("estimated_probability", 0.0)
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Match Score", f"{score}/100", "Match" if is_match else "No Match")
+                c2.metric("Confidence", f"{prob*100:.1f}%")
+                c3.metric("Experience Match", "Yes" if data.get("compatibility", {}).get("experience_match") == 1.0 else "No")
+                
+                st.progress(min(1.0, max(0.0, score / 100.0)))
+                
+                tab1, tab2, tab3 = st.tabs(["Skills Breakdown", "SHAP Features", "Raw Response"])
+                
+                with tab1:
+                    sk = data.get("skills_analysis", {})
+                    col_sk1, col_sk2 = st.columns(2)
                     
-                    st.progress(min(1.0, max(0.0, score / 100.0)))
+                    m_group = sk.get("matched_grouped", {})
+                    mis_group = sk.get("missing_grouped", {})
+                    m_flat = sk.get("matched_skills", [])
+                    mis_flat = sk.get("missing_skills", [])
                     
-                    tab1, tab2, tab3 = st.tabs(["Skills Breakdown", "SHAP Features", "Raw Response"])
-                    
-                    with tab1:
-                        sk = data.get("skills_analysis", {})
-                        col_sk1, col_sk2 = st.columns(2)
-                        
-                        m_group = sk.get("matched_grouped", {})
-                        mis_group = sk.get("missing_grouped", {})
-                        m_flat = sk.get("matched_skills", [])
-                        mis_flat = sk.get("missing_skills", [])
-                        
-                        with col_sk1:
-                            st.subheader("Matched Skills")
-                            has_matched = False
-                            if m_group.get("technical"):
-                                st.markdown("**Technical Skills:**")
-                                for s in m_group["technical"]: st.markdown(f"- ✅ **{s}**")
-                                has_matched = True
-                            if m_group.get("professional"):
-                                st.markdown("**Professional / Soft Skills:**")
-                                for s in m_group["professional"]: st.markdown(f"- 🤝 **{s}**")
-                                has_matched = True
-                            if m_group.get("domain"):
-                                st.markdown("**Domain / Industry Skills:**")
-                                for s in m_group["domain"]: st.markdown(f"- 🏢 **{s}**")
-                                has_matched = True
-                            if m_group.get("generic"):
-                                st.markdown("**General / Other Skills:**")
-                                for s in m_group["generic"]: st.markdown(f"- 💡 **{s}**")
-                                has_matched = True
-                                
-                            if not has_matched:
-                                if m_flat:
-                                    st.markdown("**All Matched Skills:**")
-                                    for s in m_flat: st.markdown(f"- ✅ **{s}**")
-                                else:
-                                    st.info("No matching ESCO skills detected in text.")
-                                    
-                        with col_sk2:
-                            st.subheader("Missing Skills (Skill Gap)")
-                            has_missing = False
-                            if mis_group.get("technical"):
-                                st.markdown("**Technical Skills:**")
-                                for s in mis_group["technical"]: st.markdown(f"- ❌ **{s}**")
-                                has_missing = True
-                            if mis_group.get("professional"):
-                                st.markdown("**Professional / Soft Skills:**")
-                                for s in mis_group["professional"]: st.markdown(f"- ❌ **{s}**")
-                                has_missing = True
-                            if mis_group.get("domain"):
-                                st.markdown("**Domain / Industry Skills:**")
-                                for s in mis_group["domain"]: st.markdown(f"- ❌ **{s}**")
-                                has_missing = True
-                            if mis_group.get("generic"):
-                                st.markdown("**General / Other Skills:**")
-                                for s in mis_group["generic"]: st.markdown(f"- ❌ **{s}**")
-                                has_missing = True
-                                
-                            if not has_missing:
-                                if mis_flat:
-                                    st.markdown("**All Missing Skills:**")
-                                    for s in mis_flat: st.markdown(f"- ❌ **{s}**")
-                                else:
-                                    st.success("No skill gap detected! Candidate satisfies all required job skills.")
-                                
-                    with tab2:
-                        shap_feats = data.get("top_contributing_features", [])
-                        if shap_feats:
-                            st.dataframe(shap_feats)
-                        else:
-                            st.info("No SHAP features available.")
+                    with col_sk1:
+                        st.subheader("Matched Skills")
+                        has_matched = False
+                        if m_group.get("technical"):
+                            st.markdown("**Technical Skills:**")
+                            for s in m_group["technical"]: st.markdown(f"- ✅ **{s}**")
+                            has_matched = True
+                        if m_group.get("professional"):
+                            st.markdown("**Professional / Soft Skills:**")
+                            for s in m_group["professional"]: st.markdown(f"- 🤝 **{s}**")
+                            has_matched = True
+                        if m_group.get("domain"):
+                            st.markdown("**Domain / Industry Skills:**")
+                            for s in m_group["domain"]: st.markdown(f"- 🏢 **{s}**")
+                            has_matched = True
+                        if m_group.get("generic"):
+                            st.markdown("**General / Other Skills:**")
+                            for s in m_group["generic"]: st.markdown(f"- 💡 **{s}**")
+                            has_matched = True
                             
-                    with tab3:
-                        st.json(data)
+                        if not has_matched:
+                            if m_flat:
+                                st.markdown("**All Matched Skills:**")
+                                for s in m_flat: st.markdown(f"- ✅ **{s}**")
+                            else:
+                                st.info("No matching ESCO skills detected in text.")
+                                
+                    with col_sk2:
+                        st.subheader("Missing Skills (Skill Gap)")
+                        has_missing = False
+                        if mis_group.get("technical"):
+                            st.markdown("**Technical Skills:**")
+                            for s in mis_group["technical"]: st.markdown(f"- ❌ **{s}**")
+                            has_missing = True
+                        if mis_group.get("professional"):
+                            st.markdown("**Professional / Soft Skills:**")
+                            for s in mis_group["professional"]: st.markdown(f"- ❌ **{s}**")
+                            has_missing = True
+                        if mis_group.get("domain"):
+                            st.markdown("**Domain / Industry Skills:**")
+                            for s in mis_group["domain"]: st.markdown(f"- ❌ **{s}**")
+                            has_missing = True
+                        if mis_group.get("generic"):
+                            st.markdown("**General / Other Skills:**")
+                            for s in mis_group["generic"]: st.markdown(f"- ❌ **{s}**")
+                            has_missing = True
+                            
+                        if not has_missing:
+                            if mis_flat:
+                                st.markdown("**All Missing Skills:**")
+                                for s in mis_flat: st.markdown(f"- ❌ **{s}**")
+                            else:
+                                st.success("No skill gap detected! Candidate satisfies all required job skills.")
+                            
+                with tab2:
+                    shap_feats = data.get("top_contributing_features", [])
+                    if shap_feats:
+                        st.dataframe(shap_feats)
+                    else:
+                        st.info("No SHAP features available.")
                         
-                else:
-                    st.error(f"API Error ({response.status_code}): {response.text}")
-            except Exception as e:
-                st.error(f"Failed to communicate with FastAPI backend: {e}")
+                with tab3:
+                    st.json(data)
